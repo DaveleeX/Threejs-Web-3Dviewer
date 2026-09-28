@@ -249,6 +249,7 @@ export class Viewer {
     const r = this.settings.render;
     this.renderer.toneMapping = TONE_MAPPING[r.toneMapping] ?? THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = r.exposure;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.resize();
     this.applyPost();
   }
@@ -521,6 +522,7 @@ export class Viewer {
       this.playClip(0);
     }
 
+    this.applyAssetLook(result.kind === 'splat' ? 'splat' : 'mesh');
     this.stats = this.collectStats(result);
     this.onStatsChange?.(this.stats);
 
@@ -528,8 +530,64 @@ export class Viewer {
     this.applyLighting();
     this.applyScene();
     void this.applyEnvironment();
-    this.applyPost();
+    this.applyRender();
     this.frameModel();
+  }
+
+  /**
+   * Two display profiles:
+   * - splat: match the video/training view (no ACES/bloom/grade, black backdrop)
+   * - mesh: the page's default studio look (ACES, lights, gradient)
+   */
+  private applyAssetLook(kind: 'mesh' | 'splat'): void {
+    if (kind === 'splat') this.applySplatDisplayLook();
+    else this.applyMeshDisplayLook();
+  }
+
+  private applySplatDisplayLook(): void {
+    const s = this.settings;
+    s.render.toneMapping = 'none';
+    s.render.exposure = 1;
+    s.post.aoEnabled = false;
+    s.post.bloomEnabled = false;
+    s.grade.enabled = false;
+    s.env.background = 'color';
+    s.env.backgroundColor = '#000000';
+    s.scene.grid = false;
+  }
+
+  private applyMeshDisplayLook(): void {
+    const s = this.settings;
+    const d = defaultSettings(s.render.tier);
+    s.render.toneMapping = d.render.toneMapping;
+    s.render.exposure = d.render.exposure;
+    s.post.aoEnabled = d.post.aoEnabled;
+    s.post.aoIntensity = d.post.aoIntensity;
+    s.post.aoRadius = d.post.aoRadius;
+    s.post.aoThickness = d.post.aoThickness;
+    s.post.bloomEnabled = d.post.bloomEnabled;
+    s.post.bloomStrength = d.post.bloomStrength;
+    s.post.bloomRadius = d.post.bloomRadius;
+    s.post.bloomThreshold = d.post.bloomThreshold;
+    s.grade.enabled = d.grade.enabled;
+    s.grade.contrast = d.grade.contrast;
+    s.grade.saturation = d.grade.saturation;
+    s.grade.shadows = d.grade.shadows;
+    s.grade.midtones = d.grade.midtones;
+    s.grade.highlights = d.grade.highlights;
+    s.grade.tint = d.grade.tint;
+    s.grade.vignette = d.grade.vignette;
+    s.grade.vignetteSoftness = d.grade.vignetteSoftness;
+    s.env.background = d.env.background;
+    s.env.backgroundColor = d.env.backgroundColor;
+    s.env.backgroundBlur = d.env.backgroundBlur;
+    s.env.backgroundIntensity = d.env.backgroundIntensity;
+    s.env.intensity = d.env.intensity;
+    s.light.keyEnabled = d.light.keyEnabled;
+    s.light.fillEnabled = d.light.fillEnabled;
+    s.light.rimEnabled = d.light.rimEnabled;
+    s.light.groundShadow = d.light.groundShadow;
+    s.scene.grid = d.scene.grid;
   }
 
   clearModel(): void {
@@ -798,7 +856,7 @@ export class Viewer {
   async enableSplatRendering(): Promise<void> {
     if (this.splatRenderer) return;
     const { SparkRenderer } = await import('@sparkjsdev/spark');
-    const spark = new SparkRenderer({ renderer: this.renderer });
+    const spark = new SparkRenderer({ renderer: this.renderer, encodeLinear: true });
     this.splatRenderer = spark;
     this.scene.add(spark);
   }

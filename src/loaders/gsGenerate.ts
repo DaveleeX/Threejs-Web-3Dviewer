@@ -1,6 +1,6 @@
 export const VIDEO_EXTENSIONS = ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi', 'wmv', 'mpeg', 'mpg', '3gp'] as const;
 
-export type GsQuality = 'draft' | 'standard';
+export type GsQuality = 'draft' | 'standard' | 'high';
 
 export interface GsProgress {
   ratio: number;
@@ -14,10 +14,79 @@ export interface GsJob {
   abort(): void;
 }
 
-const QUALITY: Record<GsQuality, { maxIters: number; initTarget: number; shDeg: number }> = {
-  draft: { maxIters: 8000, initTarget: 40_000, shDeg: 1 },
-  standard: { maxIters: 25_000, initTarget: 80_000, shDeg: 2 },
+export interface GsLiveHooks {
+  onFrames?(frames: Array<{ source: Blob; name: string }>): void;
+  onLive?(session: import('splat.js').SplatSession): void;
+  onTeardown?(): void;
+  viewSize?: { maxViewW: number; maxViewH: number };
+}
+
+interface GsQualityPreset {
+  maxIters: number;
+  initTarget: number;
+  shDeg: number;
+  maxSplats: number;
+  maxViewW: number;
+  maxViewH: number;
+  trainMaxDim?: number;
+  targetBudgetBytes: number;
+  targetFrames: number;
+  samplesPerSec: number;
+  minBufferSec: number;
+  jpegQuality: number;
+  hint: string;
+}
+
+/** More frames without a larger GPU budget just shrinks trainMaxDim — keep those two in lockstep. */
+const QUALITY: Record<GsQuality, GsQualityPreset> = {
+  draft: {
+    maxIters: 8000,
+    initTarget: 40_000,
+    shDeg: 1,
+    maxSplats: 250_000,
+    maxViewW: 1280,
+    maxViewH: 720,
+    trainMaxDim: 960,
+    targetBudgetBytes: 500_000_000,
+    targetFrames: 40,
+    samplesPerSec: 8,
+    minBufferSec: 0.25,
+    jpegQuality: 0.88,
+    hint: '约 40 张训练帧、8 千步、1 阶球谐。先确认视频能不能重建。',
+  },
+  standard: {
+    maxIters: 25_000,
+    initTarget: 80_000,
+    shDeg: 2,
+    maxSplats: 500_000,
+    maxViewW: 1920,
+    maxViewH: 1080,
+    targetBudgetBytes: 1_200_000_000,
+    targetFrames: 80,
+    samplesPerSec: 10,
+    minBufferSec: 0.2,
+    jpegQuality: 0.93,
+    hint: '约 80 张帧、2.5 万步、2 阶球谐。一般绕拍视频用这一档。',
+  },
+  high: {
+    maxIters: 50_000,
+    initTarget: 150_000,
+    shDeg: 3,
+    maxSplats: 800_000,
+    maxViewW: 2560,
+    maxViewH: 1440,
+    targetBudgetBytes: 1_800_000_000,
+    targetFrames: 140,
+    samplesPerSec: 12,
+    minBufferSec: 0.15,
+    jpegQuality: 0.95,
+    hint: '约 140 张帧、5 万步、3 阶球谐、更高训练分辨率。请保持标签页在前台；显存不够时改回标准。',
+  },
 };
+
+export function gsQualityHint(quality: GsQuality): string {
+  return (QUALITY[quality] ?? QUALITY.standard).hint;
+}
 
 export interface GsEnvInfo {
   ok: boolean;
@@ -94,7 +163,12 @@ export function isVideoFileName(name: string, mime = ''): boolean {
   return (VIDEO_EXTENSIONS as readonly string[]).includes(name.split('.').pop()?.toLowerCase() ?? '');
 }
 
-export function startSplatFromVideo(video: File, quality: GsQuality, onProgress: (state: GsProgress) => void): GsJob {
+export function startSplatFromVideo(
+  video: File,
+  quality: GsQuality,
+  onProgress: (state: GsProgress) => void,
+  hooks: GsLiveHooks = {},
+): GsJob {
   const abort = new AbortController();
   let session: import('splat.js').SplatSession | null = null;
   let finishing = false;
@@ -127,10 +201,16 @@ export function startSplatFromVideo(video: File, quality: GsQuality, onProgress:
     }
     throwIfAborted();
 
+    const preset = QUALITY[quality] ?? QUALITY.standard;
+
     onProgress({ ratio: 0.02, label: '正在从视频抽取清晰帧…', canFinish: false });
     let extracted: Awaited<ReturnType<typeof extractSharpFrames>>;
     try {
       extracted = await extractSharpFrames(video, {
+        targetFrames: preset.targetFrames,
+        samplesPerSec: preset.samplesPerSec,
+        minBufferSec: preset.minBufferSec,
+        jpegQuality: preset.jpegQuality,
         onProgress: (event) => {
           const part = event.total > 0 ? event.done / event.total : 0;
           const ratio = event.stage === 'scan' ? 0.02 + 0.1 * part : 0.12 + 0.1 * part;
@@ -146,11 +226,19 @@ export function startSplatFromVideo(video: File, quality: GsQuality, onProgress:
       throw new Error(`可用帧太少（${extracted.frames.length}）。请换一段绕物体缓慢拍摄、约 20 秒以上的视频。`);
     }
 
-    const preset = QUALITY[quality];
+    hooks.onFrames?.(extracted.frames);
+
+    const view = hooks.viewSize;
     session = createSession({
       maxIters: preset.maxIters,
       initTarget: preset.initTarget,
-      trainer: { shDeg: preset.shDeg },
+      maxViewW: Math.max(preset.maxViewW, view?.maxViewW ?? 0),
+      maxViewH: Math.max(preset.maxViewH, view?.maxViewH ?? 0),
+      trainer: { shDeg: preset.shDeg, maxSplats: preset.maxSplats },
+      frames: {
+        ...(preset.trainMaxDim ? { trainMaxDim: preset.trainMaxDim } : {}),
+        targetBudgetBytes: preset.targetBudgetBytes,
+      },
     });
 
     const unsub: Array<() => void> = [];
@@ -188,6 +276,7 @@ export function startSplatFromVideo(video: File, quality: GsQuality, onProgress:
       throwIfAborted();
 
       onProgress({ ratio: 0.58, label: '开始训练 3DGS…', canFinish: false });
+      hooks.onLive?.(session);
       await waitForTraining(session, abort.signal, () => finishing);
 
       onProgress({ ratio: 0.96, label: '导出高斯泼溅 PLY', canFinish: false });
@@ -197,6 +286,11 @@ export function startSplatFromVideo(video: File, quality: GsQuality, onProgress:
     } finally {
       for (const off of unsub) off();
       session.pause();
+      try {
+        hooks.onTeardown?.();
+      } catch {
+        /* host already torn down */
+      }
       session.dispose();
       session = null;
     }

@@ -4,6 +4,9 @@ import { Recorder, downloadBlob } from '../core/Recorder';
 import { createDemoScene } from '../core/demoScene';
 import { buildPanels, type PanelsApi } from './buildPanels';
 import { HandheldHost } from './handheldHost';
+import { GsLivePreview, previewViewSize } from './gsLivePreview';
+import { EmptyCubeBg } from './emptyCubeBg';
+import { mountProjectGallery } from './projectGallery';
 import { el } from './controls';
 import {
   ENV_EXTENSIONS,
@@ -20,6 +23,7 @@ import { isSketchfabInput, resolveSketchfabModel } from '../loaders/sketchfab';
 import {
   VIDEO_EXTENSIONS,
   checkGsEnvironment,
+  gsQualityHint,
   isVideoFileName,
   startSplatFromVideo,
   translateGsError,
@@ -59,6 +63,8 @@ export class App {
   private readonly recorder: Recorder;
   private readonly panels: PanelsApi;
   private readonly handheld: HandheldHost;
+  private readonly cubeBg: EmptyCubeBg;
+  private readonly gsPreview = new GsLivePreview();
 
   private readonly canvas = byId<HTMLCanvasElement>('viewport');
   private readonly emptyState = byId('empty-state');
@@ -94,6 +100,8 @@ export class App {
       notify: (message, kind) => this.toast(message, kind),
     });
     this.panels = buildPanels(this.sidebar, this.viewer, (m, k) => this.toast(m, k), this.handheld);
+    this.cubeBg = new EmptyCubeBg(byId<HTMLCanvasElement>('empty-cube-bg'));
+    mountProjectGallery((active) => active ? this.viewer.pause() : this.viewer.resume());
 
     this.fileInput.accept = ACCEPT;
 
@@ -118,17 +126,33 @@ export class App {
     this.panels.refreshStats();
     this.panels.refreshTree();
     this.panels.refreshChannels();
+    if (new URLSearchParams(location.search).get('showcase') === 'materials') {
+      document.body.classList.add('material-showcase');
+      this.loadDemo();
+    }
   }
 
   // ----------------------------------------------------------------- wiring
 
   private toggleSidebar(): void {
+    if (this.isHome()) return;
     document.body.classList.toggle('sidebar-collapsed');
+    this.syncFramingInset();
+  }
+
+  private isHome(): boolean {
+    return document.body.classList.contains('home-mode');
+  }
+
+  private setHomeMode(on: boolean): void {
+    this.emptyState.classList.toggle('hidden', !on);
+    document.body.classList.toggle('home-mode', on);
     this.syncFramingInset();
   }
 
   private syncFramingInset(): void {
     const hidden =
+      this.isHome() ||
       document.body.classList.contains('sidebar-collapsed') ||
       this.canvas.clientWidth < this.sidebar.offsetWidth * 2.4;
     this.viewer.setFramingInset(hidden ? 0 : this.sidebar.offsetWidth);
@@ -154,11 +178,10 @@ export class App {
   }
 
   private wireToolbar(): void {
-    byId('btn-open').addEventListener('click', () => this.openAddDialog('file'));
+    byId('btn-home').addEventListener('click', () => this.returnToHome());
+    byId('btn-open').addEventListener('click', () => this.fileInput.click());
     byId('btn-sketchfab').addEventListener('click', () => this.openAddDialog('sketchfab'));
     byId('btn-close-sketchfab').addEventListener('click', () => this.returnToHome());
-    byId('empty-open').addEventListener('click', () => this.fileInput.click());
-    byId('empty-sample').addEventListener('click', () => this.loadDemo());
     byId('btn-reset').addEventListener('click', () => {
       if (this.sketchfabActive) {
         this.reloadSketchfab();
@@ -178,13 +201,9 @@ export class App {
   }
 
   private wireOpenDialog(): void {
-    const emptyFileBtn = byId('source-file');
-    const emptyLinkBtn = byId('source-sketchfab');
     const dialogFileBtn = byId('dialog-source-file');
     const dialogLinkBtn = byId('dialog-source-sketchfab');
 
-    emptyFileBtn.addEventListener('click', () => this.setEmptySource('file'));
-    emptyLinkBtn.addEventListener('click', () => this.setEmptySource('sketchfab'));
     dialogFileBtn.addEventListener('click', () => this.setDialogSource('file'));
     dialogLinkBtn.addEventListener('click', () => this.setDialogSource('sketchfab'));
 
@@ -195,10 +214,6 @@ export class App {
       this.fileInput.click();
     });
 
-    byId<HTMLFormElement>('empty-sketchfab-form').addEventListener('submit', (event) => {
-      event.preventDefault();
-      void this.loadSketchfab(byId<HTMLInputElement>('empty-sketchfab-url').value);
-    });
     byId<HTMLFormElement>('dialog-sketchfab-form').addEventListener('submit', (event) => {
       event.preventDefault();
       void this.loadSketchfab(byId<HTMLInputElement>('dialog-sketchfab-url').value);
@@ -213,6 +228,13 @@ export class App {
     byId('gs-dialog-start').addEventListener('click', () => this.closeGsDialog(true));
     byId('progress-cancel').addEventListener('click', () => this.gsJob?.abort());
     byId('progress-finish').addEventListener('click', () => void this.gsJob?.finishEarly());
+    const quality = byId<HTMLSelectElement>('gs-quality');
+    const hint = byId('gs-quality-hint');
+    const syncHint = () => {
+      hint.textContent = gsQualityHint(quality.value as GsQuality);
+    };
+    quality.addEventListener('change', syncHint);
+    syncHint();
   }
 
   private gsDialogResolver: ((ok: boolean) => void) | null = null;
@@ -247,15 +269,31 @@ export class App {
   private async generateSplat(video: File): Promise<void> {
     const quality = byId<HTMLSelectElement>('gs-quality').value as GsQuality;
     this.exitSketchfab();
+    this.setHomeMode(false);
+    this.modelName.textContent = '正在生成 3DGS…';
+    this.viewer.pause();
+    this.gsPreview.begin(video);
     this.showProgress(true, 0.01, '准备 3DGS 训练', true);
     byId<HTMLButtonElement>('progress-finish').disabled = true;
-    const job = startSplatFromVideo(video, quality, (state) => {
-      this.showProgress(true, state.ratio, state.label, true);
-      byId<HTMLButtonElement>('progress-finish').disabled = !state.canFinish;
-    });
+    const job = startSplatFromVideo(
+      video,
+      quality,
+      (state) => {
+        this.showProgress(true, state.ratio, state.label, true);
+        byId<HTMLButtonElement>('progress-finish').disabled = !state.canFinish;
+      },
+      {
+        viewSize: previewViewSize(),
+        onFrames: (frames) => this.gsPreview.showFrames(frames),
+        onLive: (session) => this.gsPreview.attachSession(session),
+        onTeardown: () => this.gsPreview.detachGpu(),
+      },
+    );
     this.gsJob = job;
     try {
       const ply = await job.done;
+      this.gsPreview.end();
+      this.viewer.resume();
       downloadBlob(ply, ply.name);
       const opened = await this.loadModel(() => this.loader.load([{ path: ply.name, file: ply }], this.onProgress), true);
       if (opened) this.toast('3DGS 已生成，PLY 已下载到本地', 'success');
@@ -268,26 +306,16 @@ export class App {
       this.toast(`3DGS 生成失败：${translateGsError(err)}`, 'error');
     } finally {
       this.gsJob = null;
+      this.gsPreview.end();
+      this.viewer.resume();
       this.showProgress(false, 1, '');
+      if (!this.viewer.stats) {
+        this.setHomeMode(true);
+        this.modelName.textContent = '';
+      }
     }
   }
 
-  private setEmptySource(source: 'file' | 'sketchfab'): void {
-    const file = source === 'file';
-    byId('source-file').classList.toggle('is-active', file);
-    byId('source-sketchfab').classList.toggle('is-active', !file);
-    byId('source-file').setAttribute('aria-selected', String(file));
-    byId('source-sketchfab').setAttribute('aria-selected', String(!file));
-    byId('empty-file-pane').classList.toggle('hidden', !file);
-    byId('empty-sketchfab-pane').classList.toggle('hidden', file);
-    const sub = this.emptyState.querySelector('.empty-sub');
-    if (sub) {
-      sub.textContent = file
-        ? '拖放模型或视频到此处，或选择文件开始预览'
-        : '粘贴 Sketchfab 模型链接，使用官方预览效果与交互';
-    }
-    if (!file) byId<HTMLInputElement>('empty-sketchfab-url').focus();
-  }
 
   private setDialogSource(source: 'file' | 'sketchfab'): void {
     const file = source === 'file';
@@ -338,6 +366,7 @@ export class App {
 
   private wireKeyboard(): void {
     window.addEventListener('keydown', (event) => {
+      if (document.body.classList.contains('project-preview-open')) return;
       if (event.key === 'Escape' && !this.openDialog.classList.contains('hidden')) {
         event.preventDefault();
         this.closeAddDialog();
@@ -355,6 +384,7 @@ export class App {
 
       switch (event.key) {
         case 'Tab':
+          if (this.isHome()) return;
           event.preventDefault();
           this.toggleSidebar();
           break;
@@ -383,7 +413,10 @@ export class App {
       const button = el('button', undefined, preset.label);
       button.type = 'button';
       button.title = preset.title;
-      button.addEventListener('click', () => this.viewer.setView(preset.id));
+      button.addEventListener('click', () => {
+        if (this.isHome()) this.cubeBg.setView(preset.id);
+        else this.viewer.setView(preset.id);
+      });
       host.append(button);
     }
   }
@@ -546,7 +579,7 @@ export class App {
     this.sketchfabActive = true;
     this.handheld.disable();
     document.body.classList.add('sketchfab-mode');
-    this.emptyState.classList.add('hidden');
+    this.setHomeMode(false);
     this.viewer.pause();
     this.sketchfabFrame.src = embedSrc;
     this.sketchfabStage.classList.remove('hidden');
@@ -564,9 +597,10 @@ export class App {
   private returnToHome(): void {
     this.closeAddDialog();
     this.exitSketchfab();
-    this.emptyState.classList.remove('hidden');
+    this.viewer.clearModel();
+    this.refreshTimeline();
+    this.setHomeMode(true);
     this.modelName.textContent = '';
-    this.setEmptySource('file');
   }
 
   private exitSketchfab(): void {
@@ -579,7 +613,7 @@ export class App {
     this.viewer.resume();
     this.viewer.resize();
     if (!this.viewer.stats) {
-      this.emptyState.classList.remove('hidden');
+      this.setHomeMode(true);
       this.modelName.textContent = '';
     }
   }
@@ -587,7 +621,7 @@ export class App {
   private loadDemo(): void {
     this.exitSketchfab();
     this.viewer.setModel(createDemoScene());
-    this.emptyState.classList.add('hidden');
+    this.setHomeMode(false);
     this.modelName.textContent = '示例 · 材质展示';
     this.refreshTimeline();
     this.toast('已载入示例场景', 'success');
@@ -604,7 +638,7 @@ export class App {
       if (result.kind === 'splat') await this.viewer.enableSplatRendering();
 
       this.viewer.setModel(result);
-      this.emptyState.classList.add('hidden');
+      this.setHomeMode(false);
       this.modelName.textContent = result.object.name || '未命名模型';
       this.refreshTimeline();
       if (!silent) this.toast(`已载入 ${result.format} 模型`, 'success');
@@ -624,6 +658,7 @@ export class App {
 
   private showProgress(visible: boolean, ratio: number, label: string, train = false): void {
     this.progress.classList.toggle('hidden', !visible);
+    this.progress.classList.toggle('is-train', visible && train);
     const fill = this.progress.querySelector<HTMLElement>('.progress-fill');
     const text = this.progress.querySelector('.progress-text');
     if (fill) fill.style.width = `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`;

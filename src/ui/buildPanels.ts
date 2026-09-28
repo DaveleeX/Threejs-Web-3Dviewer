@@ -44,6 +44,15 @@ export function buildPanels(
   let refreshChannels = (): void => {};
   let splatCleanup: HTMLElement;
   let splatFloaterSlider: SliderHandle;
+  let splatLookNote: HTMLParagraphElement;
+  let gridToggle: ReturnType<typeof addToggle>;
+  let backgroundMode: ReturnType<typeof addSegmented<BackgroundMode>>;
+  let backgroundColor: ReturnType<typeof addColor>;
+  let aoToggle: ReturnType<typeof addToggle>;
+  let bloomToggle: ReturnType<typeof addToggle>;
+  let gradeToggle: ReturnType<typeof addToggle>;
+  let toneMappingSelect: ReturnType<typeof addSelect<ToneMappingName>>;
+  let exposureSlider: SliderHandle;
 
   // ------------------------------------------------------------------ scene
 
@@ -122,7 +131,7 @@ export function buildPanels(
     refreshChannelPresence();
 
     addDivider(b);
-    addToggle(b, {
+    gridToggle = addToggle(b, {
       label: '地面网格',
       value: s.scene.grid,
       onChange: (v) => {
@@ -160,6 +169,11 @@ export function buildPanels(
       onInput: (value) => viewer.setSplatFloaterTrim(value / 100),
     });
     addNote(splatCleanup, '只隐藏远离主体的高斯球，不重新训练。0% 为原始结果。');
+    splatLookNote = addNote(
+      splatCleanup,
+      '高斯资产按原视频/训练色显示（无 ACES、泛光、调色）。打开网格模型会自动回到网页默认的摄影棚外观。',
+    );
+    splatLookNote.classList.add('hidden');
     b.append(splatCleanup);
 
     addDivider(b);
@@ -290,7 +304,7 @@ export function buildPanels(
 
     addDivider(b);
     addSubhead(b, '背景');
-    addSegmented<BackgroundMode>(b, {
+    backgroundMode = addSegmented<BackgroundMode>(b, {
       value: s.env.background,
       options: [
         { value: 'gradient', label: '渐变' },
@@ -303,7 +317,7 @@ export function buildPanels(
         viewer.refreshBackground();
       },
     });
-    addColor(b, {
+    backgroundColor = addColor(b, {
       label: '背景颜色',
       value: s.env.backgroundColor,
       onChange: (v) => {
@@ -616,7 +630,7 @@ export function buildPanels(
     const refresh = () => viewer.applyPost();
 
     addSubhead(b, '环境光遮蔽 GTAO');
-    addToggle(b, { label: '启用 AO', value: s.post.aoEnabled, onChange: (v) => ((s.post.aoEnabled = v), refresh()) });
+    aoToggle = addToggle(b, { label: '启用 AO', value: s.post.aoEnabled, onChange: (v) => ((s.post.aoEnabled = v), refresh()) });
     addSlider(b, {
       label: 'AO 强度',
       min: 0,
@@ -644,7 +658,7 @@ export function buildPanels(
 
     addDivider(b);
     addSubhead(b, '泛光 Bloom');
-    addToggle(b, { label: '启用泛光', value: s.post.bloomEnabled, onChange: (v) => ((s.post.bloomEnabled = v), refresh()) });
+    bloomToggle = addToggle(b, { label: '启用泛光', value: s.post.bloomEnabled, onChange: (v) => ((s.post.bloomEnabled = v), refresh()) });
     addSlider(b, {
       label: '强度',
       min: 0,
@@ -678,7 +692,7 @@ export function buildPanels(
     const b = gradePanel.body;
     const refresh = () => viewer.applyPost();
 
-    addToggle(b, { label: '启用调色', value: s.grade.enabled, onChange: (v) => ((s.grade.enabled = v), refresh()) });
+    gradeToggle = addToggle(b, { label: '启用调色', value: s.grade.enabled, onChange: (v) => ((s.grade.enabled = v), refresh()) });
     addSlider(b, {
       label: '对比度',
       min: 0.5,
@@ -807,7 +821,7 @@ export function buildPanels(
       value: s.render.resolutionScale,
       onInput: (v) => ((s.render.resolutionScale = v), refresh()),
     });
-    addSelect<ToneMappingName>(b, {
+    toneMappingSelect = addSelect<ToneMappingName>(b, {
       label: '色调映射',
       value: s.render.toneMapping,
       options: [
@@ -821,7 +835,7 @@ export function buildPanels(
       ],
       onChange: (v) => ((s.render.toneMapping = v), refresh()),
     });
-    addSlider(b, {
+    exposureSlider = addSlider(b, {
       label: '曝光',
       min: 0,
       max: 4,
@@ -877,6 +891,7 @@ export function buildPanels(
     if (!stats) {
       infoPanel.setNote('');
       splatCleanup.classList.add('hidden');
+      splatLookNote.classList.add('hidden');
       return;
     }
 
@@ -894,7 +909,16 @@ export function buildPanels(
     ];
     if (stats.splats > 0) entries.splice(1, 0, ['高斯点', stats.splats.toLocaleString()]);
     splatCleanup.classList.toggle('hidden', stats.splats <= 0);
+    splatLookNote.classList.toggle('hidden', stats.splats <= 0);
     splatFloaterSlider.set(Math.round(s.scene.splatFloater * 100));
+    gridToggle.set(s.scene.grid);
+    backgroundMode.set(s.env.background);
+    backgroundColor.set(s.env.backgroundColor);
+    aoToggle.set(s.post.aoEnabled);
+    bloomToggle.set(s.post.bloomEnabled);
+    gradeToggle.set(s.grade.enabled);
+    toneMappingSelect.set(s.render.toneMapping);
+    exposureSlider.set(s.render.exposure);
 
     for (const [key, value] of entries) {
       statsList.append(el('dt', undefined, key), el('dd', undefined, value));

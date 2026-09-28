@@ -21,7 +21,25 @@ declare module 'splat.js' {
 
   export interface SplatSession {
     training: boolean;
-    trainer: { iter: number; n: number } | null;
+    model: { n: number; center: number[]; radius: number } | null;
+    trainer: {
+      iter: number;
+      n: number;
+      camMeta: Array<{ R: number[]; t: number[]; f: number; w: number; h: number }>;
+    } | null;
+    view: {
+      attach(canvas: HTMLCanvasElement): void;
+      lookThrough(i: number): unknown;
+      setCamera(cam: {
+        R: number[];
+        t: number[];
+        f: number;
+        cx: number;
+        cy: number;
+        w: number;
+        h: number;
+      }): void;
+    };
     on(type: 'stage', fn: (event: { stage: string; done: number; total: number; detail?: unknown }) => void): () => void;
     on(
       type: 'metrics',
@@ -31,7 +49,7 @@ declare module 'splat.js' {
     on(type: 'log', fn: (message: string) => void): () => void;
     load(files: Array<File | Blob | { source: Blob; name: string }>): Promise<unknown>;
     solve(extra?: { signal?: AbortSignal }): Promise<{ cams: unknown[]; points: unknown[] }>;
-    seed(): Promise<{ n: number }>;
+    seed(): Promise<{ n: number; center: number[]; radius: number }>;
     start(): void;
     pause(): void;
     finish(): Promise<void>;
@@ -42,6 +60,9 @@ declare module 'splat.js' {
   export function createSession(opts?: {
     maxIters?: number;
     initTarget?: number;
-    trainer?: { shDeg?: number };
+    maxViewW?: number;
+    maxViewH?: number;
+    trainer?: { shDeg?: number; maxSplats?: number; capMult?: number };
+    frames?: { trainMaxDim?: number; featMaxDim?: number; targetBudgetBytes?: number };
   }): SplatSession;
 }

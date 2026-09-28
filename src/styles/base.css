@@ -168,6 +168,16 @@ body {
   color: var(--accent);
 }
 
+.social-links { display: flex; align-items: center; gap: 3px; margin-left: 16px; }
+.social-links a { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; color: #777f8a; text-decoration: none; border-radius: 7px; transition: color 180ms, background 180ms; }
+.social-links svg { width: 18px; height: 18px; }
+.social-links .social-xhs { width: 40px; font-size: 10px; font-weight: 800; letter-spacing: -1px; }
+.social-links a:hover, .social-links a:focus-visible { color: #e6edf5; background: rgba(255,255,255,0.07); }
+.social-links .social-xhs:hover { color: #ff526b; }
+.social-links a:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+body:not(.home-mode) .social-links { display: none; }
+@media (prefers-reduced-motion: reduce) { .social-links a { transition: none; } }
+
 .model-name {
   margin-left: 10px;
   padding-left: 12px;
@@ -196,20 +206,65 @@ body {
   position: absolute;
   inset: 0;
   z-index: 20;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: radial-gradient(ellipse at 50% 42%, rgba(30, 46, 78, 0.5), rgba(5, 7, 12, 0.94) 70%);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 24px 24px 62px;
+  pointer-events: none;
+  background: transparent;
+}
+
+.empty-cube-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.empty-cube-bg:active,
+.empty-cube-bg.is-dragging {
+  cursor: grabbing;
 }
 
 .empty-card {
-  text-align: center;
-  max-width: 480px;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 16px;
+  width: min(920px, 100%);
+  padding: 12px 18px;
+  pointer-events: auto;
+  text-align: left;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(8, 11, 18, 0.62);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.empty-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .empty-icon {
-  width: 54px;
-  height: 54px;
+  width: 28px;
+  height: 28px;
+  flex: none;
   fill: none;
   stroke: var(--accent);
   stroke-width: 1.1;
@@ -217,37 +272,77 @@ body {
   opacity: 0.9;
 }
 
+.empty-copy {
+  min-width: 0;
+}
+
 .empty-card h1 {
-  margin: 14px 0 6px;
-  font-size: 25px;
+  margin: 0;
+  font-size: 15px;
   font-weight: 650;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
 }
 
 .empty-sub {
-  margin: 0 0 22px;
+  margin: 2px 0 0;
   color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.empty-pane {
+  display: contents;
+}
+
+.empty-card .source-toggle {
+  margin: 0;
 }
 
 .empty-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   justify-content: center;
-  margin-bottom: 26px;
+  margin: 0;
 }
 
 .empty-actions .btn {
-  height: 36px;
-  padding: 0 18px;
-  font-size: 13px;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 12.5px;
 }
 
 .empty-formats {
+  flex: 1 1 100%;
   margin: 0;
-  font-size: 11.5px;
-  line-height: 1.85;
+  font-size: 11px;
+  line-height: 1.45;
   color: var(--text-faint);
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.empty-card .sketchfab-form {
+  margin: 0;
+  max-width: none;
+  min-width: 220px;
+  flex: 1 1 240px;
+}
+
+@media (max-width: 720px) {
+  .empty-state {
+    padding: 16px 12px 96px;
+  }
+
+  .empty-card {
+    justify-content: flex-start;
+  }
+
+  .empty-formats {
+    white-space: normal;
+    text-align: left;
+  }
 }
 
 .source-toggle {
@@ -367,6 +462,89 @@ body.sketchfab-mode .stats {
 
 body.sketchfab-mode #viewport {
   visibility: hidden;
+}
+
+body.gs-live .sidebar,
+body.gs-live .view-presets,
+body.gs-live .timeline,
+body.gs-live .stats,
+body.gs-live .empty-state {
+  display: none !important;
+}
+
+body.gs-live .toasts {
+  bottom: 118px;
+}
+
+body.home-mode .sidebar,
+body.home-mode #btn-reset,
+body.home-mode #btn-shot,
+body.home-mode #btn-record,
+body.home-mode #btn-fullscreen,
+body.home-mode #btn-sidebar {
+  display: none !important;
+}
+
+body.home-mode .view-presets {
+  right: 14px;
+}
+
+.gs-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 22;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #05070c;
+  touch-action: none;
+  cursor: grab;
+}
+
+.gs-preview:active {
+  cursor: grabbing;
+}
+
+.gs-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 22;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 72px 24px 140px;
+  background: radial-gradient(ellipse at 50% 42%, rgba(18, 28, 48, 0.92), rgba(5, 7, 12, 0.96) 72%);
+  pointer-events: none;
+}
+
+.gs-source-video {
+  max-width: min(720px, 72vw);
+  max-height: min(42vh, 420px);
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: #000;
+  object-fit: contain;
+}
+
+.gs-frames {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: min(960px, 92vw);
+  max-height: 46vh;
+  overflow: auto;
+}
+
+.gs-frames img {
+  width: 92px;
+  height: 62px;
+  object-fit: cover;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: #000;
 }
 
 .dialog {
@@ -534,6 +712,44 @@ body.sketchfab-mode #viewport {
   box-shadow: var(--shadow-panel);
 }
 
+.progress.is-train {
+  inset: auto 0 22px;
+  z-index: 85;
+  place-items: end center;
+  background: none;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+
+.progress.is-train .progress-card {
+  pointer-events: auto;
+  padding: 14px 18px 16px;
+  gap: 8px;
+  background: rgba(10, 14, 22, 0.88);
+  backdrop-filter: blur(12px);
+}
+
+.progress.is-train .spinner {
+  width: 16px;
+  height: 16px;
+  border-width: 1.5px;
+}
+
+.progress.is-train .progress-track {
+  width: min(320px, 72vw);
+}
+
+.progress-hint {
+  display: none;
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+body.gs-live-splats .progress-hint {
+  display: block;
+}
+
 .spinner {
   width: 26px;
   height: 26px;
@@ -597,6 +813,13 @@ body.sketchfab-mode #viewport {
   background: rgba(0, 0, 0, 0.28);
   color: var(--text);
   font: inherit;
+}
+
+.gs-quality-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
 }
 
 /* ------------------------------------------------------------------ stats */
