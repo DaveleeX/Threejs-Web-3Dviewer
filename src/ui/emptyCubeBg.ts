@@ -252,8 +252,11 @@ export class EmptyCubeBg {
     document.addEventListener('visibilitychange', this.onVisibility);
     new ResizeObserver(() => this.resize()).observe(this.host);
     this.canvas.addEventListener('pointerdown', this.onPointerDown);
-    this.canvas.addEventListener('pointermove', this.onPointerMove);
-    this.canvas.addEventListener('pointerleave', () => { this.hoverPoint = null; });
+    // Track the pointer above foreground controls too, without intercepting
+    // their clicks or starting a background drag from a download link.
+    document.addEventListener('pointermove', this.onPointerMove, { capture: true, passive: true });
+    document.documentElement.addEventListener('pointerleave', () => { this.hoverPoint = null; });
+    window.addEventListener('blur', () => { this.hoverPoint = null; });
     this.canvas.addEventListener('pointerup', this.onPointerUp);
     this.canvas.addEventListener('pointercancel', this.onPointerUp);
     this.canvas.addEventListener('lostpointercapture', this.onPointerUp);

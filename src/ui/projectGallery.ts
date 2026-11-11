@@ -49,7 +49,7 @@ export function mountProjectGallery(onActive: (active: boolean) => void): void {
     <div class="project-track" tabindex="0" aria-label="项目海报，可上下滚动">
       <article class="project-card" data-preview-id="materials">
         <button class="project-poster" type="button" data-demo aria-label="预览示例场景">
-          <img src="${import.meta.env.BASE_URL}projects/material-demo.svg" alt="材质示例" draggable="false" />
+          <img src="${import.meta.env.BASE_URL}projects/material-demo.png" alt="材质示例" draggable="false" />
           <span class="project-play" aria-hidden="true">▷</span>
           <span class="project-caption"><strong>材质实验室</strong></span>
         </button>
@@ -145,7 +145,7 @@ export function mountProjectGallery(onActive: (active: boolean) => void): void {
     if (demo) {
       const url = new URL(import.meta.env.BASE_URL, location.origin);
       url.searchParams.set('showcase', 'materials');
-      openProject({ title: '材质实验室', poster: 'material-demo.svg', url: url.href, github: '' }, demo);
+      openProject({ title: '材质实验室', poster: 'material-demo.png', url: url.href, github: '' }, demo);
       return;
     }
     const poster = (event.target as Element).closest<HTMLButtonElement>('[data-project]');

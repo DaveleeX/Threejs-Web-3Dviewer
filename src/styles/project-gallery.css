@@ -110,7 +110,7 @@ body.home-mode .topbar { background: linear-gradient(#05070cf5, #05070ce8); back
 .project-card.is-following .project-card-surface { transition-duration: 160ms; border-color: #8bc8ff55; box-shadow: 18px 24px 45px #0007; }
 .project-card-surface::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; background: radial-gradient(ellipse at var(--shine-x, 25%) var(--shine-y, 10%), #b4dfff12, transparent 65%); opacity: 0; transition: opacity 350ms; }
 .project-card.is-following .project-card-surface::after { opacity: 1; }
-.project-preview-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #070b12; pointer-events: none; opacity: 0; transition: opacity 300ms; }
+.project-preview-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; background: #070b12; pointer-events: none; opacity: 0; transition: opacity 300ms; }
 .is-video-playing .project-preview-video { opacity: 1; }
 @media (prefers-reduced-motion: reduce), (hover: none) {
   .project-card-surface { transform: none; transition: none; }

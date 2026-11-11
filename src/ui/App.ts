@@ -7,6 +7,7 @@ import { HandheldHost } from './handheldHost';
 import { GsLivePreview, previewViewSize } from './gsLivePreview';
 import { EmptyCubeBg } from './emptyCubeBg';
 import { mountProjectGallery } from './projectGallery';
+import { mountXpullDownload } from './xpullDownload';
 import { el } from './controls';
 import {
   ENV_EXTENSIONS,
@@ -102,6 +103,7 @@ export class App {
     this.panels = buildPanels(this.sidebar, this.viewer, (m, k) => this.toast(m, k), this.handheld);
     this.cubeBg = new EmptyCubeBg(byId<HTMLCanvasElement>('empty-cube-bg'));
     mountProjectGallery((active) => active ? this.viewer.pause() : this.viewer.resume());
+    mountXpullDownload();
 
     this.fileInput.accept = ACCEPT;
 
