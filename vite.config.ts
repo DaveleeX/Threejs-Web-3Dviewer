@@ -27,6 +27,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id.includes('node_modules/three-gpu-pathtracer') || id.includes('node_modules/three-mesh-bvh')) return 'pathtracer';
           if (id.includes('node_modules/three')) return 'three';
           if (id.includes('node_modules/@sparkjsdev')) return 'spark';
           if (id.includes('node_modules/splat.js')) return 'splat-train';

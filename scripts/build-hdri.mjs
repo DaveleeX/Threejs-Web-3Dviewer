@@ -1,7 +1,7 @@
 // Converts the source HDR panoramas into web-sized RGBE files plus small PNG
 // thumbnails for the sidebar. The originals run up to 3561x1779 / 18 MB, which
 // is far more than a light probe needs: PMREM blurs them down to 256px anyway,
-// and the viewer blurs the background by default.
+// while a separate original is retained for the default sharp background.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
 import { resolve } from 'node:path';
@@ -266,6 +266,7 @@ await mkdir(OUT, { recursive: true });
 
 for (const job of JOBS) {
   const buf = await readFile(resolve(SRC, job.src));
+  if (job.out === 'interior-hall') await writeFile(resolve(OUT, 'interior-hall-full.hdr'), buf);
   const { width, height, rgb } = decodeHdr(buf);
 
   const scale = Math.min(MAX_W / width, MAX_H / height, 1);

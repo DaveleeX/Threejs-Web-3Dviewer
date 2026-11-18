@@ -1,0 +1,15 @@
+.effect-card { padding: 10px 0; border-bottom: 1px solid #ffffff12; }
+.effect-card p { font-size: 11px; line-height: 1.6; opacity: .65; margin: 6px 0; }
+.effect-card a { font-size: 10px; color: #92c9dc; }
+.effect-card > label { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; font-size: 11px; }
+.effect-card button[aria-pressed="true"] { border-color: #75bba1; color: #a6e9cc; }
+.effect-trace-dialog { color: #dce4ec; background: #141920; border: 1px solid #ffffff22;
+  border-radius: 14px; padding: 20px; max-width: min(720px, 95vw); }
+.effect-trace-dialog::backdrop { background: #000b; }
+.effect-trace-dialog h2 { font-size: 18px; }
+.effect-trace-dialog p { font-size: 12px; line-height: 1.6; }
+.effect-trace-dialog canvas { display: block; width: 100%; max-height: 65vh; object-fit: contain; margin-bottom: 14px; }
+.effect-trace-dialog button { margin-right: 8px; }
+.feather-reference-dialog { width: min(1100px, 94vw); max-width: 94vw; }
+.feather-reference-dialog canvas { width: 100%; height: min(65vh, 700px); max-height: none; }
+.feather-reference-dialog a { color: #a6e9cc; font-size: 12px; }

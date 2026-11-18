@@ -1,0 +1,12 @@
+{
+  "upstream": "https://github.com/scottstts/Jelly-Baby",
+  "commit": "a030ccf097584472c792d7f0a97010add5b937c9",
+  "retrieved": "2026-11-18",
+  "license": "GPL-3.0",
+  "localFiles": {
+    "soft-body.js": "d167f147d0fe6f013f5aee1e2e2e2c5b375acb2a6fa8f5b31581a62024708464",
+    "deform-surface.js": "087b3ca02b5931b38c4d65a71b4897c3a6a3bfea6c4e9c6771bf8d7df2f339ac",
+    "orientation-safety.js": "002737a1f0646ac09e6cb93a6e239dbf0ec5c00746d5e4a904d22916f507e652",
+    "constants.js": "031170e8ade414fca2bf456b53166147bf844c3b3bd015be458b729b23873860"
+  }
+}

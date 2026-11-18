@@ -74,6 +74,7 @@ export class PostFX {
   }
 
   setLUT(texture: THREE.Data3DTexture | null): void {
+    if (this.lut.lut && this.lut.lut !== texture) this.lut.lut.dispose();
     this.lut.lut = texture ?? undefined;
   }
 
@@ -125,9 +126,8 @@ export class PostFX {
   }
 
   dispose(): void {
+    this.setLUT(null);
+    for (const pass of this.composer.passes) pass.dispose();
     this.composer.dispose();
-    this.gtao.dispose();
-    this.bloom.dispose();
-    this.smaa.dispose();
   }
 }

@@ -11,6 +11,7 @@ import {
   type IsolatorId,
 } from '../core/channels';
 import { mountHandheldPanel } from './handheldPanel';
+import { mountEffectsPanel } from './effectsPanel';
 import {
   addButtons,
   addColor,
@@ -880,6 +881,7 @@ export function buildPanels(
     renderPanel.root,
     infoPanel.root,
   );
+  mountEffectsPanel(sidebar, viewer, notify);
 
   // ---------------------------------------------------------------- updates
 

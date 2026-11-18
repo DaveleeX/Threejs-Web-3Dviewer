@@ -124,6 +124,8 @@ export interface HdriPresetDef {
   label: string;
   /** Equirectangular .hdr under public/hdri, fetched on first use. */
   file: string;
+  /** Optional full-resolution panorama for an unblurred visible background. */
+  backgroundFile?: string;
   thumb: string;
 }
 
@@ -137,7 +139,7 @@ export const HDRI_PRESETS: HdriPresetDef[] = [
   { id: 'studio-metal', label: '金属棚拍', file: 'hdri/studio-metal.hdr', thumb: 'hdri/studio-metal.png' },
   { id: 'studio-strip', label: '条灯棚拍', file: 'hdri/studio-strip.hdr', thumb: 'hdri/studio-strip.png' },
   { id: 'studio-white', label: '纯白环境', file: 'hdri/studio-white.hdr', thumb: 'hdri/studio-white.png' },
-  { id: 'interior-hall', label: '室内会场', file: 'hdri/interior-hall.hdr', thumb: 'hdri/interior-hall.png' },
+  { id: 'interior-hall', label: '室内会场', file: 'hdri/interior-hall.hdr', backgroundFile: 'hdri/interior-hall-full.hdr', thumb: 'hdri/interior-hall.png' },
 ];
 
 export const HDRI_PREFIX = 'hdri:';

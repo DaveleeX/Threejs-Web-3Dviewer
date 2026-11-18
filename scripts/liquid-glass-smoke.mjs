@@ -1,0 +1,43 @@
+import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+try {
+  const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+  const errors = [];
+  page.on('pageerror', e => { errors.push(e.message); console.log(e.message); });
+  page.on('console', m => { if (m.type() === 'error') { errors.push(m.text()); console.log(m.text()); } });
+  await page.route('**/effects-test', route => route.fulfill({ contentType: 'text/html', body: '<html><body style="margin:0"></body></html>' }));
+  await page.goto('http://127.0.0.1:5173/effects-test');
+  const result = await page.evaluate(async () => {
+    const THREE = await import('/node_modules/three/build/three.module.js');
+    const { LiquidGlassEffect } = await import('/src/effects/LiquidGlassEffect.ts');
+    const scene = new THREE.Scene(); scene.background = new THREE.Color('#778fa2');
+    const camera = new THREE.PerspectiveCamera(40, 1000 / 700, 0.01, 100); camera.position.set(0, 1.2, 5); camera.lookAt(0, 0, 0);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setSize(1000, 700); renderer.toneMapping = THREE.ACESFilmicToneMapping; document.body.append(renderer.domElement);
+    const source = new THREE.Mesh(new THREE.TorusKnotGeometry(.55, .18, 80, 12), new THREE.MeshStandardMaterial({ color: '#eb8343', metalness: .6, roughness: .22 })); scene.add(source);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x203040, 3));
+    const light = new THREE.DirectionalLight(0xffffff, 4); light.position.set(3, 4, 2); scene.add(light);
+    const envScene = new THREE.Scene(); envScene.background = new THREE.Color('#a8b5c9');
+    const pmrem = new THREE.PMREMGenerator(renderer), environment = pmrem.fromScene(envScene); scene.environment = environment.texture;
+    renderer.render(scene, camera);
+    const baseline = renderer.domElement.toDataURL();
+    const effect = new LiquidGlassEffect({ renderer, camera, settings: { render: { tier: 'high' } }, getEffectMeshes: () => [source] });
+    effect.mount(scene);
+    const oldTone = renderer.toneMapping, oldTarget = renderer.getRenderTarget();
+    effect.update(); renderer.render(scene, camera);
+    const changed = baseline !== renderer.domElement.toDataURL();
+    const lens = scene.getObjectByName('Reference liquid glass lens');
+    console.log('lens', lens.position.toArray(), lens.material.defines, lens.visible);
+    const restored = oldTone === renderer.toneMapping && oldTarget === renderer.getRenderTarget();
+    window.testCleanup = () => { effect.dispose(); renderer.render(scene, camera); const removed = !scene.getObjectByName('Reference liquid glass lens'); renderer.dispose(); environment.dispose(); pmrem.dispose(); source.geometry.dispose(); source.material.dispose(); return removed; };
+    return { changed, restored };
+  });
+  await mkdir('smoke-out/effects', { recursive: true });
+  await page.screenshot({ path: 'smoke-out/effects/liquid-glass-lens.png' });
+  assert.deepEqual(result, { changed: true, restored: true });
+  assert.equal(await page.evaluate(() => window.testCleanup()), true);
+  assert.deepEqual(errors, []);
+  console.log('PASS lens shader, captured model, environment, renderer state restoration and removal');
+} finally { await browser.close(); }

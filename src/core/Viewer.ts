@@ -22,6 +22,7 @@ import {
 import type { LoadResult } from '../loaders/ModelLoader';
 import { extensionOf } from '../loaders/fileMap';
 import { HandheldRig } from './HandheldRig';
+import { EffectHost } from '../effects/EffectHost';
 
 export interface ModelStats {
   format: string;
@@ -52,6 +53,7 @@ export type ViewDirection = 'front' | 'back' | 'left' | 'right' | 'top' | 'botto
 export class Viewer {
   readonly settings: ViewerSettings;
   readonly scene = new THREE.Scene();
+  readonly effects = new EffectHost(this.scene);
   readonly renderer: THREE.WebGLRenderer;
 
   camera: THREE.PerspectiveCamera | THREE.OrthographicCamera;
@@ -81,6 +83,11 @@ export class Viewer {
   private framingInsetRight = 0;
   private hdriCache = new Map<string, THREE.Texture>();
   private envToken = 0;
+  private envBuiltFor = '';
+  private disposed = false;
+  private environmentFileToken = 0;
+  private lutFileToken = 0;
+  private hdriPending = new Map<string, Promise<THREE.Texture>>();
 
   private mixer: THREE.AnimationMixer | null = null;
   private action: THREE.AnimationAction | null = null;
@@ -176,6 +183,8 @@ export class Viewer {
   // ------------------------------------------------------------------ loop
 
   start(): void {
+    this.timer.connect(document);
+    this.timer.reset();
     this.renderer.setAnimationLoop(() => this.tick());
   }
 
@@ -184,6 +193,7 @@ export class Viewer {
   }
 
   resume(): void {
+    this.timer.reset();
     this.renderer.setAnimationLoop(() => this.tick());
   }
 
@@ -204,6 +214,7 @@ export class Viewer {
     } else {
       this.controls.update();
     }
+    this.effects.update(delta);
     this.postfx.render(delta);
   }
 
@@ -358,24 +369,30 @@ export class Viewer {
   async applyEnvironment(): Promise<void> {
     const e = this.settings.env;
     const hdri = findHdri(e.preset);
+    const key = e.preset === 'custom' ? `custom:${this.envSourceTexture?.uuid}` : e.preset;
+    const token = ++this.envToken;
 
-    if (hdri) {
+    if (key !== this.envBuiltFor && hdri) {
       // Guard against a slow fetch landing after the user has moved on.
-      const token = ++this.envToken;
       const texture = await this.loadHdri(hdri);
-      if (token !== this.envToken) return;
+      if (token !== this.envToken || this.disposed) return;
       this.setEnvironmentTexture(this.pmrem.fromEquirectangular(texture));
-    } else if (e.preset !== 'custom') {
-      this.envToken++;
+      this.envBuiltFor = key;
+    } else if (key !== this.envBuiltFor && e.preset !== 'custom') {
       const preset = findPreset(e.preset);
       const envScene = buildEnvScene(preset);
       this.setEnvironmentTexture(this.pmrem.fromScene(envScene, 0.02));
       disposeEnvScene(envScene);
-    } else if (this.envSourceTexture) {
-      this.envToken++;
+      this.envBuiltFor = key;
+    } else if (key !== this.envBuiltFor && this.envSourceTexture) {
       this.setEnvironmentTexture(this.pmrem.fromEquirectangular(this.envSourceTexture));
+      this.envBuiltFor = key;
     }
 
+    if (hdri?.backgroundFile && e.background === 'environment' && e.backgroundBlur === 0) {
+      await this.loadHdri({ ...hdri, id: hdri.id + ':background', file: hdri.backgroundFile });
+      if (token !== this.envToken || this.disposed) return;
+    }
     this.refreshBackground();
     this.scene.environmentIntensity = e.intensity;
     this.scene.environmentRotation.set(0, THREE.MathUtils.degToRad(e.rotation), 0);
@@ -393,7 +410,8 @@ export class Viewer {
     const e = this.settings.env;
     switch (e.background) {
       case 'environment':
-        this.scene.background = this.scene.environment;
+        // Use the original panorama for sharp backgrounds; PMREM remains the lighting probe.
+        this.scene.background = this.getEffectEnvironment() ?? this.scene.environment;
         break;
       case 'color':
         this.scene.background = new THREE.Color(e.backgroundColor);
@@ -433,6 +451,10 @@ export class Viewer {
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.mapping = THREE.UVMapping;
     this.gradientCache.set(base, texture);
+    while (this.gradientCache.size > 2) {
+      const oldest = this.gradientCache.keys().next().value!;
+      this.gradientCache.get(oldest)!.dispose(); this.gradientCache.delete(oldest);
+    }
     return texture;
   }
 
@@ -451,10 +473,22 @@ export class Viewer {
   /** Fetches one of the bundled HDR panoramas, keeping the decoded texture around. */
   private async loadHdri(def: HdriPresetDef): Promise<THREE.Texture> {
     const cached = this.hdriCache.get(def.id);
-    if (cached) return cached;
+    if (cached) {
+      this.hdriCache.delete(def.id); this.hdriCache.set(def.id, cached);
+      return cached;
+    }
+    const pending = this.hdriPending.get(def.id);
+    if (pending) return pending;
+    const request = this.fetchHdri(def);
+    this.hdriPending.set(def.id, request);
+    try { return await request; }
+    finally { this.hdriPending.delete(def.id); }
+  }
 
+  private async fetchHdri(def: HdriPresetDef): Promise<THREE.Texture> {
     const texture = await new RGBELoader().loadAsync(`${import.meta.env.BASE_URL}${def.file}`);
     texture.mapping = THREE.EquirectangularReflectionMapping;
+    if (this.disposed) { texture.dispose(); return texture; }
 
     const raced = this.hdriCache.get(def.id);
     if (raced) {
@@ -463,16 +497,23 @@ export class Viewer {
     }
 
     this.hdriCache.set(def.id, texture);
+    for (const [id, old] of this.hdriCache) {
+      if (this.hdriCache.size <= 3) break;
+      if (id === def.id || old === this.scene.background) continue;
+      old.dispose(); this.hdriCache.delete(id);
+    }
     return texture;
   }
 
   /** Loads a user-supplied .hdr / .exr as the light probe. */
   async loadEnvironmentFile(file: File): Promise<void> {
+    const token = ++this.environmentFileToken;
     const url = URL.createObjectURL(file);
     try {
       const ext = extensionOf(file.name);
       const loader = ext === 'exr' ? new EXRLoader() : new RGBELoader();
       const texture = await loader.loadAsync(url);
+      if (this.disposed || token !== this.environmentFileToken) { texture.dispose(); return; }
       texture.mapping = THREE.EquirectangularReflectionMapping;
       this.envSourceTexture?.dispose();
       this.envSourceTexture = texture;
@@ -485,11 +526,13 @@ export class Viewer {
 
   /** Loads a .cube / .3dl look-up table for the grading stage. */
   async loadLutFile(file: File): Promise<void> {
+    const token = ++this.lutFileToken;
     const url = URL.createObjectURL(file);
     try {
       const ext = extensionOf(file.name);
       const loader = ext === '3dl' ? new LUT3dlLoader() : new LUTCubeLoader();
       const result = await loader.loadAsync(url);
+      if (this.disposed || token !== this.lutFileToken) { result.texture3D.dispose(); return; }
       this.postfx.setLUT(result.texture3D);
       this.settings.grade.lutEnabled = true;
       this.applyPost();
@@ -499,6 +542,7 @@ export class Viewer {
   }
 
   clearLut(): void {
+    ++this.lutFileToken;
     this.postfx.setLUT(null);
     this.settings.grade.lutEnabled = false;
     this.applyPost();
@@ -591,6 +635,7 @@ export class Viewer {
   }
 
   clearModel(): void {
+    this.effects.clearModelEffects();
     this.stopAnimation();
     this.originalMaterials.clear();
     this.removeWireOverlay();
@@ -683,6 +728,7 @@ export class Viewer {
   }
 
   private applyShading(mode: ShadingMode): void {
+    this.effects.clearModelEffects();
     this.removeWireOverlay();
 
     for (const material of this.shadingOverrides) material.dispose();
@@ -708,6 +754,7 @@ export class Viewer {
   }
 
   private applyIsolator(id: IsolatorId): void {
+    this.effects.clearModelEffects();
     this.removeWireOverlay();
     for (const material of this.shadingOverrides) material.dispose();
     this.shadingOverrides = [];
@@ -1135,6 +1182,22 @@ export class Viewer {
 
   // --------------------------------------------------------------- capture
 
+  getEffectEnvironment(): THREE.Texture | null {
+    if (this.settings.env.preset === 'custom') return this.envSourceTexture;
+    const hdri = findHdri(this.settings.env.preset);
+    return hdri ? this.hdriCache.get(hdri.id + ':background') ?? this.hdriCache.get(hdri.id) ?? null : null;
+  }
+
+  /** Extension boundary: source meshes only, never helpers or effect children. */
+  getEffectMeshes(): THREE.Mesh[] {
+    if (this.currentModel?.kind !== 'mesh') return [];
+    return [...this.originalMaterials.keys()].filter(mesh =>
+      mesh.visible && !(mesh as THREE.SkinnedMesh).isSkinnedMesh &&
+      !(mesh as THREE.InstancedMesh).isInstancedMesh &&
+      !mesh.geometry.morphAttributes.position?.length &&
+      Boolean(mesh.geometry.attributes.position && mesh.geometry.attributes.normal));
+  }
+
   /** Renders one frame at `scale`x the viewport size and returns a PNG blob. */
   async captureImage(scale: number, transparent: boolean): Promise<Blob> {
     const width = this.canvas.clientWidth;
@@ -1164,7 +1227,11 @@ export class Viewer {
   }
 
   dispose(): void {
+    this.disposed = true;
+    ++this.envToken;
     this.renderer.setAnimationLoop(null);
+    this.timer.dispose();
+    this.effects.dispose();
     this.canvas.removeEventListener('pointerdown', this.handlePointerDown);
     this.clearModel();
     this.postfx.dispose();

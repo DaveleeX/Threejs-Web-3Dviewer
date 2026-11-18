@@ -16,6 +16,8 @@
     "postinstall": "node scripts/copy-decoders.mjs"
   },
   "dependencies": {
+    "three-gpu-pathtracer": "0.0.24",
+    "three-mesh-bvh": "0.9.8",
     "@sparkjsdev/spark": "^2.1.0",
     "qrcode": "1.5.4",
     "splat.js": "github:arrival-space/splat.js",
