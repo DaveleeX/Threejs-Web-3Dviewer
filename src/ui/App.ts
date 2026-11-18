@@ -639,7 +639,7 @@ export class App {
       const result = await run();
       if (result.kind === 'splat') await this.viewer.enableSplatRendering();
 
-      this.viewer.setModel(result);
+      this.viewer.setModel(result, true);
       this.setHomeMode(false);
       this.modelName.textContent = result.object.name || '未命名模型';
       this.refreshTimeline();

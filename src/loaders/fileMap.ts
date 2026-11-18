@@ -20,7 +20,9 @@ export function baseName(path: string): string {
 }
 
 function normalize(path: string): string {
-  return decodeURI(path).replace(/\\/g, '/').replace(/^\.?\//, '').toLowerCase();
+  // Literal percent signs are legal in local filenames.
+  try { path = decodeURI(path); } catch { /* Keep malformed URI text as a filename. */ }
+  return path.replace(/\\/g, '/').replace(/^\.?\//, '').toLowerCase();
 }
 
 /**
@@ -32,7 +34,7 @@ function normalize(path: string): string {
 export class FileResolver {
   private readonly byPath = new Map<string, File>();
   private readonly byName = new Map<string, File>();
-  private readonly urls: string[] = [];
+  private readonly urls = new Map<File, string>();
 
   constructor(files: NamedFile[]) {
     for (const { path, file } of files) {
@@ -57,8 +59,10 @@ export class FileResolver {
 
   /** Creates (and remembers, for later revocation) a blob URL for a file. */
   url(file: File): string {
+    const cached = this.urls.get(file);
+    if (cached) return cached;
     const url = URL.createObjectURL(file);
-    this.urls.push(url);
+    this.urls.set(file, url);
     return url;
   }
 
@@ -68,8 +72,8 @@ export class FileResolver {
   }
 
   revokeAll(): void {
-    for (const url of this.urls) URL.revokeObjectURL(url);
-    this.urls.length = 0;
+    for (const url of this.urls.values()) URL.revokeObjectURL(url);
+    this.urls.clear();
   }
 }
 

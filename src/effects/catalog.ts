@@ -11,7 +11,7 @@ import { CollisionRainEffect, type RainOptions } from './CollisionRainEffect';
 import { JellyEffect } from './JellyEffect';
 import { WetSurfaceEffect } from './WetSurfaceEffect';
 
-export interface EffectOptions { strength: number; speed: number; feather?: FeatherOptions & { meshIds?: string[] }; glass?: LiquidGlassOptions; rain?: RainOptions }
+export interface EffectOptions { strength: number; speed: number; meshIds?: string[]; feather?: FeatherOptions & { meshIds?: string[] }; glass?: LiquidGlassOptions; rain?: RainOptions }
 export interface EffectPreset {
   id: string; label: string; slot: string; description: string; source: string;
   model?: boolean;
@@ -32,21 +32,25 @@ const sources = {
 };
 const surface = (id: SurfaceKind, label: string, description: string, source: string): EffectPreset => ({
   id, label, description: id === 'jelly' ? '源码 XPBD 体积软体、落地接触与休眠；Shift 拖动模型。光学仍为实验项。' : description, source, slot: 'surface', model: true,
-  create: (v, p) => id === 'jelly' ? new JellyEffect(v, p.strength, p.speed) : new SurfaceEffect(v.getEffectMeshes(), id, p.strength, p.speed),
+  create: (v, p) => id === 'jelly' ? new JellyEffect(v, p.strength, p.speed, p.meshIds) : new SurfaceEffect(targetMeshes(v, p), id, p.strength, p.speed),
 });
 const growth = (id: GrowthKind, label: string, description: string): EffectPreset => ({
   id, label, description, source: sources[id], slot: 'growth', model: true,
-  create: (v, p) => new GrowthEffect(v.getEffectMeshes(), id,
+  create: (v, p) => new GrowthEffect(targetMeshes(v, p), id,
     v.settings.render.tier === 'low' ? 1200 : v.settings.render.tier === 'medium' ? 3500 : 7000,
     (id === 'fur' ? 0.04 : id === 'moss' ? 0.025 : 0.065) * p.strength, p.speed),
 });
+
+function targetMeshes(viewer: Viewer, options: Partial<EffectOptions>) {
+  return viewer.getEffectMeshes().filter(mesh => !options.meshIds || options.meshIds.includes(mesh.uuid));
+}
 
 /** Source provenance differs by module; see REFERENCE_RESEARCH.md and vendor notices. */
 export const EFFECT_PRESETS: EffectPreset[] = [
   { id: 'wet', slot: 'surface', model: true, label: '源码湿表面涟漪',
     source: 'https://github.com/ektogamat/threejs-conference/blob/main/src/tsl/rainRipples.js',
     description: '保留原 PBR 贴图，向上表面加入原版雨滴涟漪和湿润粗糙度；可与降雨组合。',
-    create: (v, p) => new WetSurfaceEffect(v.getEffectMeshes(), p.strength, p.speed) },
+    create: (v, p) => new WetSurfaceEffect(targetMeshes(v, p), p.strength, p.speed) },
   ...(['calm', 'ocean'] as const).map((kind): EffectPreset => ({
     id: `water-${kind}`, slot: 'water', label: kind === 'calm' ? '平静水面' : '海洋波浪',
     source: 'https://oscardumlao.com/', description: '动态几何波浪＋环境高光；无流体碰撞、岸边泡沫。',
@@ -87,17 +91,17 @@ export function applyEffectPreset(viewer: Viewer, id: string, options: Partial<E
   const preset = EFFECT_PRESETS.find(p => p.id === id);
   if (!preset) throw new Error(`未知效果预设：${id}`);
   if (preset.model) {
-    if (!viewer.getEffectMeshes().length) throw new Error('请先载入带法线的静态网格模型；暂不支持高斯、骨骼、Morph 或实例模型。');
+    if (!targetMeshes(viewer, options).length) throw new Error('请先载入带法线的静态网格模型；暂不支持高斯、骨骼、Morph 或实例模型。');
     if (viewer.settings.scene.isolator || viewer.settings.scene.shading !== 'shaded')
       throw new Error('请先在场景面板切换到常规着色，并关闭通道隔离。');
-    const vertices = viewer.getEffectMeshes().reduce((sum, mesh) => sum + mesh.geometry.attributes.position.count, 0);
+    const vertices = targetMeshes(viewer, options).reduce((sum, mesh) => sum + mesh.geometry.attributes.position.count, 0);
     if ((id === 'jelly' || preset.slot === 'growth') && vertices > 300000)
       throw new Error('表面生长和弹性组件当前支持总顶点数 30 万以内的静态模型。');
   }
   const strength = Math.min(2, Math.max(0.1, options.strength ?? 1));
   const speed = Math.min(3, Math.max(0, options.speed ?? 1));
   if (!Number.isFinite(strength) || !Number.isFinite(speed)) throw new Error('效果参数必须为有限数值。');
-  const effect = preset.create(viewer, { strength, speed, feather: options.feather, glass: options.glass, rain: options.rain });
+  const effect = preset.create(viewer, { strength, speed, meshIds: options.meshIds, feather: options.feather, glass: options.glass, rain: options.rain });
   Object.assign(effect, { presetId: preset.id });
   viewer.effects.add(effect);
 }

@@ -1,3 +1,4 @@
+import { WorldReflections } from './WorldReflections';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
@@ -7,7 +8,7 @@ import { LUT3dlLoader } from 'three/addons/loaders/LUT3dlLoader.js';
 import { PostFX } from './PostFX';
 import { InfiniteGrid } from './InfiniteGrid';
 import { buildEnvScene, disposeEnvScene, findHdri, findPreset, type HdriPresetDef } from './environments';
-import { detectTier, pixelRatioCap } from './tier';
+import { pixelRatioCap } from './tier';
 import { defaultSettings, type ShadingMode, type ViewerSettings } from './settings';
 import {
   GEOMETRY_CHANNELS,
@@ -61,6 +62,8 @@ export class Viewer {
   private readonly orthographic: THREE.OrthographicCamera;
   readonly controls: OrbitControls;
 
+  private reflections: WorldReflections;
+  private readonly loadedModels: LoadResult[] = [];
   private readonly postfx: PostFX;
   private readonly timer = new THREE.Timer();
   private readonly pmrem: THREE.PMREMGenerator;
@@ -120,7 +123,8 @@ export class Viewer {
       preserveDrawingBuffer: true,
     });
 
-    const tier = detectTier(this.renderer.getContext());
+    this.reflections = new WorldReflections(this.scene, this.renderer);
+    const tier = 'high';
     this.settings = defaultSettings(tier);
 
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, pixelRatioCap(tier)));
@@ -215,6 +219,7 @@ export class Viewer {
       this.controls.update();
     }
     this.effects.update(delta);
+    this.reflections.update(delta);
     this.postfx.render(delta);
   }
 
@@ -550,14 +555,23 @@ export class Viewer {
 
   // ----------------------------------------------------------------- model
 
-  setModel(result: LoadResult): void {
-    this.clearModel();
+  setModel(result: LoadResult, append = false): void {
+    const adding = append && this.loadedModels.length > 0;
+    if (!adding) this.clearModel();
+    this.loadedModels.push(result);
     this.currentModel = result;
     this.settings.scene.splatFloater = 0;
     this.splatFloaterCache = null;
 
+    const previousBounds = this.modelBox.clone();
     this.modelRoot.add(result.object);
     this.normalizeAndGround(result.object);
+    if (adding) {
+      result.object.position.x += previousBounds.max.x + 0.5 + this.settings.scene.normalizeSize / 2;
+      result.object.updateWorldMatrix(true, true);
+      this.modelBox = boundsOf(this.modelRoot);
+      this.modelRadius = this.modelBox.getSize(new THREE.Vector3()).length() / 2;
+    }
     this.prepareMaterials(result.object, result.kind === 'splat');
 
     this.clips = result.animations;
@@ -566,13 +580,13 @@ export class Viewer {
       this.playClip(0);
     }
 
-    this.applyAssetLook(result.kind === 'splat' ? 'splat' : 'mesh');
+    if (!adding) this.applyAssetLook(result.kind === 'splat' ? 'splat' : 'mesh');
     this.stats = this.collectStats(result);
     this.onStatsChange?.(this.stats);
 
     this.grid.fitTo(this.modelRadius);
     this.applyLighting();
-    this.applyScene();
+    if (!adding) this.applyScene();
     void this.applyEnvironment();
     this.applyRender();
     this.frameModel();
@@ -646,7 +660,9 @@ export class Viewer {
       disposeObject(child);
     }
 
-    this.currentModel?.cleanup();
+    this.reflections.dispose();
+    for (const model of this.loadedModels) model.cleanup();
+    this.loadedModels.length = 0;
     this.currentModel = null;
     this.splatFloaterCache = null;
     if (this.splatFloaterRaf) cancelAnimationFrame(this.splatFloaterRaf);
@@ -1190,7 +1206,7 @@ export class Viewer {
 
   /** Extension boundary: source meshes only, never helpers or effect children. */
   getEffectMeshes(): THREE.Mesh[] {
-    if (this.currentModel?.kind !== 'mesh') return [];
+    if (!this.loadedModels.some(model => model.kind === 'mesh')) return [];
     return [...this.originalMaterials.keys()].filter(mesh =>
       mesh.visible && !(mesh as THREE.SkinnedMesh).isSkinnedMesh &&
       !(mesh as THREE.InstancedMesh).isInstancedMesh &&

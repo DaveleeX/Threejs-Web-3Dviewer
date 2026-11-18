@@ -679,7 +679,7 @@ export function buildPanels(
     addSlider(b, {
       label: '阈值',
       min: 0,
-      max: 2,
+      max: 5,
       step: 0.01,
       value: s.post.bloomThreshold,
       onInput: (v) => ((s.post.bloomThreshold = v), refresh()),
@@ -854,7 +854,27 @@ export function buildPanels(
       ],
       onChange: (v) => ((s.render.antialias = v), refresh()),
     });
-    addNote(b, '首次打开会按显卡自动选择档位，可随时手动覆盖。');
+    addNote(b, '默认使用高质量档位，可随时手动调整。');
+    addButtons(b, [{
+      label: '复制当前设置',
+      onClick: () => {
+        const text = JSON.stringify(s, null, 2);
+        void navigator.clipboard.writeText(text).then(
+          () => notify('当前设置已复制，粘贴到聊天即可保存为工程默认值', 'success'),
+          () => {
+            const field = el('textarea');
+            field.value = text;
+            field.readOnly = true;
+            field.setAttribute('aria-label', '当前渲染设置 JSON');
+            field.style.cssText = 'width:100%;height:180px';
+            b.append(field);
+            field.select();
+            notify('自动复制失败，请复制下方设置文本');
+          },
+        );
+      },
+    }]);
+    addNote(b, '调整完成后复制整套参数，交给开发者写入默认值。');
   }
 
   // ------------------------------------------------------------------- info

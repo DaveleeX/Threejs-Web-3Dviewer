@@ -21,10 +21,11 @@ export class JellyEffect implements SceneEffect {
   private readonly hit = new THREE.Vector3();
   private readonly inverse = new THREE.Matrix4();
   private grab?: { entry: BodyEntry; pointerId: number; controls: boolean };
-  constructor(private readonly viewer: Viewer, private readonly strength: number, private readonly speed: number) {}
+  constructor(private readonly viewer: Viewer, private readonly strength: number, private readonly speed: number, private readonly meshIds?: string[]) {}
 
   mount(): void {
     const sources = this.viewer.getEffectMeshes().filter(source => {
+      if (this.meshIds && !this.meshIds.includes(source.uuid)) return false;
       const size = new THREE.Box3().setFromObject(source).getSize(new THREE.Vector3());
       // Thin display plinths/sheets are not volume bodies and make ill-conditioned tets.
       return Math.min(size.x, size.y, size.z) / Math.max(size.x, size.y, size.z, .001) >= .12;
